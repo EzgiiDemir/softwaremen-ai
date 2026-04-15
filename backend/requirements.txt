@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+groq
+python-dotenv
+pyodbc
+python-jose[cryptography]
+passlib[bcrypt]
+pydantic

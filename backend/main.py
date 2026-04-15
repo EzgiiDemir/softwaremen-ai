@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os
 import json
+from db import get_connection, DB_GETTERS
 
 
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
@@ -203,7 +204,11 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": "llama-3.3-70b-versatile"}
+    conn = get_connection()
+    db_durum = "connected" if conn else "mock"
+    if conn:
+        conn.close()
+    return {"status": "ok", "ai": "groq", "db": db_durum}
 
 
 @app.post("/giris")
@@ -227,13 +232,25 @@ async def sor(req: SoruRequest, kullanici: dict = Depends(token_dogrula)):
         raise HTTPException(status_code=403, detail="Bu modüle erişim izniniz yok")
 
     try:
+        # DB'den veri almayı dene, başarısız olursa mock'a düş
+        veri_kaynagi = "mock"
         veri = MOCK_DATA.get(req.modul, {})
+        getter = DB_GETTERS.get(req.modul)
+        if getter:
+            conn = get_connection()
+            db_veri = getter(conn)
+            if conn:
+                conn.close()
+            if db_veri:
+                veri = db_veri
+                veri_kaynagi = "db"
+
         sistem_promptu = MODUL_PROMPTLARI.get(req.modul, MODUL_PROMPTLARI["genel"])
 
         prompt = f"""{sistem_promptu}
 
 Müşteri: {kullanici.get("ad")}
-Modül verisi:
+Modül verisi ({veri_kaynagi}):
 {veri}
 
 Kullanıcı sorusu: {req.soru}
@@ -260,6 +277,15 @@ async def modul_ozet(modul: str, kullanici: dict = Depends(token_dogrula)):
 
     try:
         veri = MOCK_DATA.get(modul, {})
+        getter = DB_GETTERS.get(modul)
+        if getter:
+            conn = get_connection()
+            db_veri = getter(conn)
+            if conn:
+                conn.close()
+            if db_veri:
+                veri = db_veri
+
         if not veri:
             raise HTTPException(status_code=404, detail="Modül bulunamadı")
 
@@ -288,7 +314,16 @@ async def bildirimler(musteri_id: str, kullanici: dict = Depends(token_dogrula))
         raise HTTPException(status_code=403, detail="Erişim izniniz yok")
 
     modul_erisim = kullanici.get("modul_erisim", [])
-    musteri_verisi = {k: v for k, v in MOCK_DATA.items() if k in modul_erisim}
+
+    # Her erişilebilir modül için DB'yi dene, başarısız olursa mock kullan
+    conn = get_connection()
+    musteri_verisi = {}
+    for modul in modul_erisim:
+        getter = DB_GETTERS.get(modul)
+        db_veri = getter(conn) if getter else None
+        musteri_verisi[modul] = db_veri if db_veri else MOCK_DATA.get(modul, {})
+    if conn:
+        conn.close()
 
     try:
         prompt = f"""Sen Softwaremen ERP sisteminin bildirim motorusun.
