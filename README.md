@@ -24,8 +24,8 @@ pip install -r requirements.txt
 GROQ_API_KEY=<groq_api_key>
 JWT_SECRET=<guclu_rastgele_deger>
 DB_SERVER=localhost
-DB_NAME=SoftwaremenDB
-DB_USER=sa
+DB_NAME=
+DB_USER=
 DB_PASSWORD=<sifre>
 ```
 
