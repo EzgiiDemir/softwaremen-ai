@@ -1,0 +1,227 @@
+================================================================================
+        SOFTWAREMEN AI ASİSTAN — PROJE RAPORU
+        Hazırlayan : Ezgi Demir
+        Tarih       : 29 Nisan 2026
+================================================================================
+
+
+1. PROJE NE YAPIYOR?
+--------------------------------------------------------------------------------
+Softwaremen AI Asistan; bir şirketin kullandığı ERP (kurumsal kaynak planlama)
+yazılımının veritabanına doğrudan bağlanarak, çalışanların günlük iş sorularını
+yapay zeka ile anlık olarak yanıtlayan bir web uygulamasıdır.
+
+Kısaca: Bir çalışan "Kritik stoklar neler?" diye yazar, sistem veritabanından
+gerçek veriyi çekip yapay zeka ile Türkçe, anlaşılır bir cevap üretir.
+
+
+2. HANGİ VERİTABANLARINA BAĞLANIYOR?
+--------------------------------------------------------------------------------
+Proje iki farklı SQL Server veritabanına bağlanmaktadır:
+
+  A) SMSUIT_DAU  (Ana iş veritabanı)
+     Sunucu  : 192.168.128.208
+     Içerik  : Stok kartları, cari hesaplar, finansal hareketler,
+               servis kayıtları, personel bilgileri, POS satışları,
+               çek/senet kayıtları ve daha fazlası.
+     Tablo   : 205 adet tablo
+     Kayıt   : Yaklaşık 870.000+ satır işlem verisi
+
+  B) GIGASOFT  (Kullanıcı ve yetki veritabanı)
+     Sunucu  : 192.168.128.208 (aynı sunucu, farklı veritabanı)
+     Içerik  : Kullanıcı hesapları, modül yetkileri (kim hangi
+               bölümü görebilir), sistem ayarları.
+
+  C) GIGASOFT.mdb  (Yedek Access veritabanı)
+     Yer     : \\192.168.128.208\SoftwareMen\Suit\Shared Resources\
+     Kullanım: GIGASOFT SQL Server bağlanamazsa devreye girer.
+               Tam otomatik yedek sistem.
+
+
+3. VERİTABANINDAKİ GERÇEK VERİLER (29 Nisan 2026 itibarıyla)
+--------------------------------------------------------------------------------
+  Ürün / Stok kartı       :   12.531 adet aktif ürün
+  Cari hesap              :    1.528 adet kayıtlı müşteri/tedarikçi
+  POS / Satış işlemi      :  867.086 adet hareket kaydı
+  Çek kaydı               :    1.858 adet çek
+  Servis kaydı            :        0 (tablo mevcut, kayıt yok)
+  Kullanıcı hesabı        :        9 adet (aktif çalışanlar)
+  Toplam tablo sayısı     :      205 adet
+
+
+4. BAĞLANTI NASIL KURULDU?
+--------------------------------------------------------------------------------
+Bağlantı teknolojisi: pyodbc — Python programlama dili için Microsoft'un resmi
+ODBC (Open Database Connectivity) kütüphanesi. SQL Server'a bağlanmak için
+standart ve güvenilir bir yöntemdir.
+
+Bağlantı dizesi örneği:
+  DRIVER: ODBC Driver 17 for SQL Server
+  SERVER: 192.168.128.208
+  DATABASE: SMSUIT_DAU
+  UID: sa
+  PWD: [şifreli]
+  TrustServerCertificate: yes
+
+Hassas bilgiler (IP, şifre, API anahtarları) ".env" adlı özel bir dosyada
+saklanır ve bu dosya GitHub'a yüklenmez — güvenlik standardına uygundur.
+
+
+5. KULLANICI DOĞRULAMA SİSTEMİ
+--------------------------------------------------------------------------------
+Yazılım, kullanıcıları doğrudan SMSUIT_DAU.USERS tablosundan çeker.
+
+Şifre algoritması: GIGASOFT'a özel XOR şifreleme yöntemi.
+  - Veritabanında şifreler "~XXXXX" formatında şifrelenmiş saklanır.
+  - Kullanıcı giriş yaparken gerçek şifreyi yazar.
+  - Sistem yazılan şifreyi aynı algoritmayla şifreler ve veritabanındakiyle
+    karşılaştırır. Eşleşirse giriş başarılı.
+
+Oturum yönetimi: JWT (JSON Web Token) — kullanıcı giriş yaptıktan sonra
+kendisine 8 saat geçerli şifreli bir token verilir. Her API isteğinde bu
+token kontrol edilir.
+
+Aktif kullanıcılar:
+  Kullanıcı Adı    İsim
+  100              ADMIN
+  IBO              IBRAHIM
+  ADNAN            ADNAN
+  IPEK             IPEK
+  IPEK2            IPEK2
+  BURAK            BURAK
+
+
+6. HANGİ MODÜLLER VAR VE NE GÖRÜRLER?
+--------------------------------------------------------------------------------
+Proje 5 ana modül içerir. Her modül farklı veritabanı tablolarını okur:
+
+  STOCKMAN — Stok Yönetimi
+    Tablo  : STK_CARD (ürün kartları), DEPOT_STK_LIST (depo miktarları)
+    Göster : Toplam ürün sayısı, kritik stoklar (miktar < 10),
+             tüm ürün listesi miktar bilgisiyle
+
+  FINANCEMAN — Finans & Kasa
+    Tablo  : PETTY_CASH (kasalar), CURRENT_CARD (cari kartlar),
+             CURRENT_TRANSACTION (hareketler), CHEQUE_CARD (çekler)
+    Göster : Kasa bakiyesi, cari hesap bakiyeleri, yaklaşan/geçmiş çekler
+
+  ACCOUNTMAN — Muhasebe
+    Tablo  : ACCOUNT_VOUCHERS (muhasebe fişleri),
+             ENTRY_TRANSACTIONS (POS/satış işlemleri)
+    Göster : Toplam fiş sayısı, son 30 satış işlemi, hesap planı
+
+  SERVICEMAN — Teknik Servis
+    Tablo  : SERVICE_TABLE (servis kayıtları)
+    Göster : Açık çağrılar, bugün/bu hafta kapanan servisler,
+             garanti durumu bilgisi
+
+  WAGEMAN — İnsan Kaynakları
+    Tablo  : PERSONNEL_CARD (personel kartları)
+    Göster : Toplam/aktif personel sayısı, personel listesi,
+             tipe göre dağılım
+
+
+7. YAPAY ZEKA NASIL ÇALIŞIYOR?
+--------------------------------------------------------------------------------
+Kullanılan yapay zeka: Groq API üzerinde çalışan Llama 3.3 70B modeli.
+(Meta'nın büyük dil modeli, Groq'un hızlı donanımında çalışır.)
+
+Çalışma mantığı:
+  1. Kullanıcı soruyu yazar  ("Kritik stoklar neler?")
+  2. Sistem hangi modülde olduğunu anlar  (StockMan)
+  3. O modüle ait gerçek verileri veritabanından çeker
+     (12.531 ürün, 1 kritik stok, stok listesi...)
+  4. Veriyi + soruyu yapay zekaya birlikte gönderir
+  5. Yapay zeka veriyi okuyarak Türkçe, anlamlı bir cevap üretir
+  6. Cevap ekranda gösterilir, gerekirse Excel/PDF indirilebilir
+
+Yapay zeka veriyi "uydurmuyor" — her zaman veritabanından çekilen
+gerçek kayıtlara dayanarak cevap veriyor. Bu en kritik farktır.
+
+
+8. SİSTEM MİMARİSİ (Teknik Özet)
+--------------------------------------------------------------------------------
+
+  [Kullanıcı Tarayıcısı]
+         |
+         | HTTP istekleri (React — localhost:5173)
+         |
+  [FastAPI Backend — localhost:8002]
+         |              |               |
+         |              |               |
+  [SMSUIT_DAU]   [GIGASOFT DB]   [Groq AI API]
+  SQL Server     SQL Server      (İnternet)
+
+
+  Katmanlar:
+  - Frontend : React + Vite (kullanıcı arayüzü)
+  - Backend  : Python FastAPI (API sunucusu)
+  - Veri     : pyodbc ile SQL Server bağlantısı
+  - AI       : Groq SDK ile Llama 3.3 70B
+  - Güvenlik : JWT token + CORS koruması
+
+
+9. KARŞILAŞILAN SORUNLAR VE ÇÖZÜMLER
+--------------------------------------------------------------------------------
+  SORUN 1: Veritabanı kolon adları uyuşmazlığı
+    Kod "BALANCE", "RESERVED_QUANTITY", "CREATED_DATE" gibi kolonları
+    arıyordu; bu kolonlar SMSUIT_DAU'da yoktu.
+    ÇÖZÜM: Veritabanı şeması incelenerek doğru kolon adları bulundu ve
+    sorgular güncellendi. (Örnek: BALANCE yerine SUM(DEPT)-SUM(CREDIT))
+
+  SORUN 2: Excel export özel karakter hatası
+    Bazı ürün adlarında (örn. "ZEYTIN&KEKIK") XML geçersiz kontrol
+    karakterleri vardı. openpyxl kütüphanesi hata veriyordu.
+    ÇÖZÜM: Her hücre değeri kaydedilmeden önce temizleme fonksiyonundan
+    geçirildi. (IllegalCharacterError → çözüldü)
+
+  SORUN 3: React sonsuz döngü hatası (ChatHistory)
+    Zustand store selector her render'da yeni {} objesi döndürüyordu,
+    React bunu "değişiklik" sanıp sonsuz döngüye giriyordu.
+    ÇÖZÜM: Modül seviyesinde sabit bir EMPTY_OBJ sabiti tanımlandı.
+
+  SORUN 4: GIGASOFT.USER_PROGRAMS tablosu boş
+    Modül yetki tablosunda hiç kayıt olmadığından sistem her kullanıcıya
+    tüm modüllere erişim hakkı verecek şekilde ayarlandı (güvenli fallback).
+
+  SORUN 5: Git kimliği tanımlı değildi
+    "Author identity unknown" hatası veriyordu.
+    ÇÖZÜM: git config ile kullanıcı adı ve e-posta tanımlandı.
+
+
+10. GÜVENLİK ÖNLEMLERİ
+--------------------------------------------------------------------------------
+  - Veritabanı şifreleri, IP adresleri ve API anahtarları .env dosyasında
+    saklanır ve GitHub'a kesinlikle yüklenmez.
+  - Her API isteği JWT token doğrulamasından geçer.
+  - Kullanıcı sadece kendi yetki verilen modülleri görebilir.
+  - SQL sorgularında parameterized query kullanılır (SQL injection önlemi).
+  - CORS koruması: sadece izin verilen kaynaklardan istek kabul edilir.
+
+
+11. KURULUM VE ÇALIŞTIRMA
+--------------------------------------------------------------------------------
+  Gereksinimler:
+    - Python 3.13+
+    - Node.js 18+
+    - ODBC Driver 17 for SQL Server (Windows'a kurulu olmalı)
+    - 192.168.128.208 sunucusuna ağ erişimi
+
+  Backend başlatma:
+    cd backend
+    .venv\Scripts\uvicorn main:app --host 0.0.0.0 --port 8002
+
+  Frontend başlatma:
+    cd frontend
+    npm run dev
+
+  Erişim:
+    Uygulama  : http://localhost:5173
+    API       : http://localhost:8002
+    API Docs  : http://localhost:8002/docs
+
+
+================================================================================
+  Bu rapor, Softwaremen AI Asistan projesinin teknik ve işlevsel
+  açıklamasını içermektedir. Tüm veriler 29 Nisan 2026 tarihindendir.
+================================================================================
