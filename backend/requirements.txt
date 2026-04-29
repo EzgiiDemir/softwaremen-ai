@@ -6,3 +6,6 @@ pyodbc
 python-jose[cryptography]
 passlib[bcrypt]
 pydantic
+openpyxl
+reportlab
+python-docx
